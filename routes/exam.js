@@ -1,0 +1,91 @@
+const express = require("express");
+const router = express.Router();
+const cloudinary = require("../config/cloudinary");
+const multer = require("multer");
+const fs = require("fs");
+const upload = multer({ dest: "uploads/" });
+const Student = require('../models/talent.model.js');
+
+router.post("/register", upload.single("photo"), async (req, res) => {
+    try {
+        const {
+            student_name, father_name, mother_name, dob, 
+            address, school, mobile, medium, student_class 
+        } = req.body || {};
+        
+        console.log("--- Request Received ---");
+        console.log("Body Data:", req.body); 
+        console.log("File Data:", req.file);
+        
+        // 1. Validation
+        if (!student_name || !student_class || !req.file || !dob) {
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(400).json({ success: false, message: "Required fields are missing!" });
+        }
+
+        // 2. Logic for Groups and Starting Roll Numbers
+        let startRoll;
+        if (["3", "4"].includes(student_class)) {
+            startRoll = 1083001; 
+        } else if (["5", "6"].includes(student_class)) {
+            startRoll = 1085001; 
+        } else if (["7", "8", "9"].includes(student_class)) {
+            startRoll = 1087001; 
+        } else {
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(400).json({ success: false, message: "Invalid Class selection!" });
+        }
+
+        // 3. Smart Roll Number Generation
+        const lastStudent = await Student.findOne({ 
+            roll: { $gte: startRoll, $lt: startRoll + 2000 } 
+        }).sort({ roll: -1 });
+
+        let finalRoll = lastStudent ? lastStudent.roll + 1 : startRoll;
+
+        // 4. Cloudinary Upload
+        let finalPhotoUrl = ""; 
+        try {
+            const result = await cloudinary.uploader.upload(req.file.path, { folder: "talent_exams" });
+            finalPhotoUrl = result.secure_url; 
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        } catch (err) {
+            if (req.file) fs.unlinkSync(req.file.path);
+            return res.status(500).json({ success: false, message: "Cloudinary upload failed" });
+        }
+
+        // 5. Date Parsing Logic (Fix for "Invalid Date" error)
+        let finalDate = dob;
+        if (dob && dob.includes("-")) {
+            const parts = dob.split("-");
+            // Agar format DD-MM-YYYY hai (e.g., 21-09-2026), to ise YYYY-MM-DD banayenge
+            if (parts[0].length === 2) {
+                finalDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+        }
+
+        // 6. Save to MongoDB
+        const newStudent = await Student.create({
+            student_name, 
+            father_name, 
+            mother_name,
+            dob: new Date(finalDate), 
+            address,
+            school,
+            mobile, 
+            medium, 
+            class: student_class, 
+            roll: finalRoll, 
+            photoUrl: finalPhotoUrl 
+        });
+
+        res.status(201).json({ success: true, student: newStudent });
+
+    } catch (err) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        console.error("Error details:", err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+module.exports = router;
