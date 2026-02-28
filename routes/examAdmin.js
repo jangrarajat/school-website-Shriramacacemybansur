@@ -85,4 +85,48 @@ router.delete("/exam/delete/:id", async (req, res) => {
     }
 });
 
+router.post("/findAdmitCard", async (req, res) => {
+    try {
+        const { mobile, roll } = req.body;
+
+        if (!mobile && !roll) {
+            return res.status(400).json({
+                success: false,
+                message: "Please provide  Mobile Number & Roll Number."
+            });
+        }
+
+        if (mobile) {
+            const getData = await Student.findOne({ mobile: mobile })
+            console.log(getData)
+            return res.status(200).json({
+                success: true,
+                message: "Student data retrieved successfully",
+                student: getData
+            });
+        }
+
+        if (roll) {
+            const getData = await Student.findOne({ roll: roll })
+            console.log(getData)
+            return res.status(200).json({
+                success: true,
+                message: "Student data retrieved successfully",
+                student: getData
+            });
+        }
+
+
+
+
+    } catch (error) {
+        console.error("Error fetching student:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server Error: Data fetch error",
+            error: error.message
+        });
+    }
+})
+
 module.exports = router;
