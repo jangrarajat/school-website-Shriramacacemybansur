@@ -8,16 +8,18 @@ router.get("/exam/all", async (req, res) => {
         // 1. Saara data fetch karein (Naya data sabse upar - Sort by createdAt)
         const students = await Student.find({}).sort({ createdAt: -1 });
 
-        // 2. Medium-wise counts nikalne ke liye logic
-        // Case-insensitive (Hindi/hindi dono count honge)
+        // 2. Medium-wise counts
         const mediumStats = {
             hindi: 0,
             english: 0,
             other: 0
         };
 
-        // 3. Class-wise counts (Optional but useful for Dashboard)
+        // 3. Class-wise counts
         const classStats = {};
+
+        // --- NEW: Group-wise (rollWithGroup) counts ---
+        const groupStats = {};
 
         students.forEach(student => {
             // Medium Count Logic
@@ -33,16 +35,22 @@ router.get("/exam/all", async (req, res) => {
             // Class Count Logic
             const cls = student.class || "Unknown";
             classStats[cls] = (classStats[cls] || 0) + 1;
+
+            // --- NEW: Group Count Logic (rollWithGroup) ---
+            // .trim() use kiya hai taki "D " aur "D" dono ek hi count ho
+            const grp = (student.rollWithGroup || "Unknown").trim();
+            groupStats[grp] = (groupStats[grp] || 0) + 1;
         });
 
         // 4. Response with all data and new stats
         res.status(200).json({
             success: true,
             message: "Success: Data fetched from MongoDB",
-            totalCount: students.length, // Total kitne bache hain
-            mediumStats: mediumStats,    // Hindi, English, Other counts
-            classStats: classStats,      // Har class ke kitne bache hain
-            data: students               // Pura student data array
+            totalCount: students.length,
+            mediumStats: mediumStats,
+            classStats: classStats,
+            groupStats: groupStats, // Ab response mein groups ka data bhi milega (A, B, C, D)
+            data: students
         });
 
     } catch (error) {
@@ -97,7 +105,7 @@ router.post("/findAdmitCard", async (req, res) => {
         }
 
         if (mobile) {
-            const getData = await Student.findOne({ mobile: mobile })
+            const getData = await Student.find({ mobile: mobile })
             console.log(getData)
             return res.status(200).json({
                 success: true,
