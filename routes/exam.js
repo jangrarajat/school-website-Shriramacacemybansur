@@ -9,56 +9,65 @@ const Student = require('../models/talent.model.js');
 router.post("/register", upload.single("photo"), async (req, res) => {
     try {
         const {
-            student_name, father_name, mother_name, dob, 
-            address, school, mobile, medium, student_class 
+            student_name, father_name, mother_name, dob,
+            address, school, mobile, medium, student_class
         } = req.body || {};
-        
+
         console.log("--- Request Received ---");
-        console.log("Body Data:", req.body); 
-        console.log("File Data:", req.file);
-        
+
         // 1. Validation
         if (!student_name || !student_class || !req.file || !dob) {
             if (req.file) fs.unlinkSync(req.file.path);
             return res.status(400).json({ success: false, message: "Required fields are missing!" });
         }
 
-        // 2. Logic for Groups and Starting Roll Numbers
+        // 2. Logic for Groups and Starting Roll Numbers (Numbers for calculation)
         let startRoll;
+        let groupName = "";
+
         if (["3", "4"].includes(student_class)) {
-            startRoll = 1083001; 
+            startRoll = 108301;
+            groupName = "A";
         } else if (["5", "6"].includes(student_class)) {
-            startRoll = 1085001; 
-        } else if (["7", "8", "9"].includes(student_class)) {
-            startRoll = 1087001; 
+            startRoll = 208501;
+            groupName = "B";
+        } else if (["7", "8"].includes(student_class)) {
+            startRoll = 308701;
+            groupName = "C";
+        } else if (["9", "10"].includes(student_class)) {
+            startRoll = 408901;
+            groupName = "D";
         } else {
-            if (req.file) fs.unlinkSync(req.file.path);
-            return res.status(400).json({ success: false, message: "Invalid Class selection!" });
+            // Default case agar koi aur class ho
+            startRoll = 500001;
+            groupName = "Group-X";
         }
 
-        // 3. Smart Roll Number Generation
-        const lastStudent = await Student.findOne({ 
-            roll: { $gte: startRoll, $lt: startRoll + 2000 } 
+        // 3. Smart Roll Number Generation (Numeric logic)
+        const lastStudent = await Student.findOne({
+            roll: { $gte: startRoll, $lt: startRoll + 2000 }
         }).sort({ roll: -1 });
 
-        let finalRoll = lastStudent ? lastStudent.roll + 1 : startRoll;
+        let finalRollNumber = lastStudent ? lastStudent.roll + 1 : startRoll;
+        
+        // Final String format for display: "Group-A 108301"
+        let rollWithGroup = `${groupName} `;
 
         // 4. Cloudinary Upload
-        let finalPhotoUrl = ""; 
+        let finalPhotoUrl = "";
         try {
             const result = await cloudinary.uploader.upload(req.file.path, { folder: "talent_exams" });
-            finalPhotoUrl = result.secure_url; 
+            finalPhotoUrl = result.secure_url;
             if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         } catch (err) {
             if (req.file) fs.unlinkSync(req.file.path);
             return res.status(500).json({ success: false, message: "Cloudinary upload failed" });
         }
 
-        // 5. Date Parsing Logic (Fix for "Invalid Date" error)
+        // 5. Date Parsing Logic
         let finalDate = dob;
         if (dob && dob.includes("-")) {
             const parts = dob.split("-");
-            // Agar format DD-MM-YYYY hai (e.g., 21-09-2026), to ise YYYY-MM-DD banayenge
             if (parts[0].length === 2) {
                 finalDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
@@ -66,17 +75,18 @@ router.post("/register", upload.single("photo"), async (req, res) => {
 
         // 6. Save to MongoDB
         const newStudent = await Student.create({
-            student_name, 
-            father_name, 
+            student_name,
+            father_name,
             mother_name,
-            dob: new Date(finalDate), 
+            dob: new Date(finalDate),
             address,
             school,
-            mobile, 
-            medium, 
-            class: student_class, 
-            roll: finalRoll, 
-            photoUrl: finalPhotoUrl 
+            mobile,
+            medium,
+            class: student_class,
+            roll: finalRollNumber, // Database mein number save hoga
+            rollWithGroup: rollWithGroup, // Display ke liye string save hogi
+            photoUrl: finalPhotoUrl
         });
 
         res.status(201).json({ success: true, student: newStudent });

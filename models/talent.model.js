@@ -8,14 +8,14 @@ const studentSchema = new mongoose.Schema({
     address: { type: String, required: true },
     school: { type: String, required: true },
     mobile: { type: String, required: true },
-    class: { type: String, required: true , enum:["3","4","5","6","7","8","9"] },
-
+    class: { type: String, required: true },
+    rollWithGroup:{ type: String, required: true},
     roll: { type: Number, unique: true }, // Roll number store karne ke liye
     medium: {
-        type: String,
-        enum: ['Hindi', 'English', 'hindi', 'english', 'Other'],
-        default: 'English'
-    },
+    type: String,
+    enum: ['Hindi', 'English', 'hindi', 'english', 'Other'],
+    default: 'English'
+},
     photoUrl: { type: String, default: "" }
 }, { timestamps: true });
 
