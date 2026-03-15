@@ -1,55 +1,42 @@
 const express = require("express");
 const router = express.Router();
 const Student = require('../models/talent.model.js');
+const cloudinary = require("../config/cloudinary");
+const multer = require("multer");
+const fs = require("fs");
 
-/* 1. GET ALL STUDENTS (MongoDB version) */
+// Multer configuration for file upload
+const upload = multer({ dest: "uploads/" });
+
+/* 1. GET ALL STUDENTS */
 router.get("/exam/all", async (req, res) => {
     try {
-        // 1. Saara data fetch karein (Naya data sabse upar - Sort by createdAt)
         const students = await Student.find({}).sort({ createdAt: -1 });
 
-        // 2. Medium-wise counts
-        const mediumStats = {
-            hindi: 0,
-            english: 0,
-            other: 0
-        };
-
-        // 3. Class-wise counts
+        const mediumStats = { hindi: 0, english: 0, other: 0 };
         const classStats = {};
-
-        // --- NEW: Group-wise (rollWithGroup) counts ---
         const groupStats = {};
 
         students.forEach(student => {
-            // Medium Count Logic
             const med = (student.medium || "").toLowerCase();
-            if (med === "hindi") {
-                mediumStats.hindi++;
-            } else if (med === "english") {
-                mediumStats.english++;
-            } else {
-                mediumStats.other++;
-            }
+            if (med === "hindi") mediumStats.hindi++;
+            else if (med === "english") mediumStats.english++;
+            else mediumStats.other++;
 
-            // Class Count Logic
             const cls = student.class || "Unknown";
             classStats[cls] = (classStats[cls] || 0) + 1;
 
-            // --- NEW: Group Count Logic (rollWithGroup) ---
-            // .trim() use kiya hai taki "D " aur "D" dono ek hi count ho
             const grp = (student.rollWithGroup || "Unknown").trim();
             groupStats[grp] = (groupStats[grp] || 0) + 1;
         });
 
-        // 4. Response with all data and new stats
         res.status(200).json({
             success: true,
             message: "Success: Data fetched from MongoDB",
             totalCount: students.length,
-            mediumStats: mediumStats,
-            classStats: classStats,
-            groupStats: groupStats, // Ab response mein groups ka data bhi milega (A, B, C, D)
+            mediumStats,
+            classStats,
+            groupStats,
             data: students
         });
 
@@ -63,12 +50,10 @@ router.get("/exam/all", async (req, res) => {
     }
 });
 
-/* 2. DELETE STUDENT (MongoDB version) */
+/* 2. DELETE STUDENT */
 router.delete("/exam/delete/:id", async (req, res) => {
     try {
-        const id = req.params.id.trim()
-
-        // MongoDB ki default _id se delete karne ke liye
+        const id = req.params.id.trim();
         const deletedStudent = await Student.findByIdAndDelete(id);
 
         if (!deletedStudent) {
@@ -93,6 +78,73 @@ router.delete("/exam/delete/:id", async (req, res) => {
     }
 });
 
+/* 3. UPDATE STUDENT - with photo upload support */
+router.put("/exam/edit/:id", upload.single("photo"), async (req, res) => {
+    try {
+        const id = req.params.id.trim();
+        const updateData = { ...req.body }; // form fields
+
+        // Agar naya photo upload hua hai to Cloudinary par bhejo
+        if (req.file) {
+            try {
+                const result = await cloudinary.uploader.upload(req.file.path, {
+                    folder: "talent_exams"
+                });
+                updateData.photoUrl = result.secure_url;
+                // Upload ke baad temp file hata do
+                if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            } catch (uploadErr) {
+                if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+                return res.status(500).json({
+                    success: false,
+                    message: "Cloudinary upload failed",
+                    error: uploadErr.message
+                });
+            }
+        }
+
+        // _id ko update nahi kar sakte
+        delete updateData._id;
+        delete updateData.file; // extra field agar ho to
+
+        // Date field ko handle karo (agar string aaye to)
+        if (updateData.dob) {
+            // Agar "YYYY-MM-DD" format mein hai to use as is, otherwise try to parse
+            // MongoDB ko Date object chahiye
+            updateData.dob = new Date(updateData.dob);
+        }
+
+        const updatedStudent = await Student.findByIdAndUpdate(id, updateData, {
+            new: true,
+            runValidators: true
+        });
+
+        if (!updatedStudent) {
+            return res.status(404).json({
+                success: false,
+                message: "Student not found!"
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Student successfully updated",
+            data: updatedStudent
+        });
+
+    } catch (error) {
+        // Agar koi error aaye to temp file hata do
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        console.error("Update Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error during update",
+            error: error.message
+        });
+    }
+});
+
+/* 4. FIND ADMIT CARD (existing) */
 router.post("/findAdmitCard", async (req, res) => {
     try {
         const { mobile, roll } = req.body;
@@ -100,13 +152,12 @@ router.post("/findAdmitCard", async (req, res) => {
         if (!mobile && !roll) {
             return res.status(400).json({
                 success: false,
-                message: "Please provide  Mobile Number & Roll Number."
+                message: "Please provide Mobile Number & Roll Number."
             });
         }
 
         if (mobile) {
-            const getData = await Student.find({ mobile: mobile })
-            console.log(getData)
+            const getData = await Student.find({ mobile: mobile });
             return res.status(200).json({
                 success: true,
                 message: "Student data retrieved successfully",
@@ -115,17 +166,13 @@ router.post("/findAdmitCard", async (req, res) => {
         }
 
         if (roll) {
-            const getData = await Student.findOne({ roll: roll })
-            console.log(getData)
+            const getData = await Student.findOne({ roll: roll });
             return res.status(200).json({
                 success: true,
                 message: "Student data retrieved successfully",
                 student: getData
             });
         }
-
-
-
 
     } catch (error) {
         console.error("Error fetching student:", error);
@@ -135,6 +182,6 @@ router.post("/findAdmitCard", async (req, res) => {
             error: error.message
         });
     }
-})
+});
 
 module.exports = router;
